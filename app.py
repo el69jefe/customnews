@@ -4,11 +4,9 @@ import requests
 import tempfile
 import os
 from pydub import AudioSegment
-from pydub.playback import play
+from flask import Flask, request, jsonify, render_template
 from dotenv import load_dotenv
-from flask import Flask, request, render_template
 
-app = Flask(__name__)
 load_dotenv()
 
 # Define categories and their associated RSS feeds
@@ -25,22 +23,22 @@ CATEGORIES = {
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 
+# Initialize OpenAI
+openai.api_key = OPENAI_API_KEY
 
 # Function to fetch news feed
 def fetch_news_feed(url):
     return feedparser.parse(url)
 
-
 # Function to get the latest articles from the feed
 def get_latest_articles(feed, num_articles=5):
     return feed.entries[:num_articles]
 
-
 # Function to summarize articles using OpenAI
-def summarize_articles(articles, openai_client, word_count):
+def summarize_articles(articles, word_count):
     text = " ".join([article.summary for article in articles])
     prompt = f"Fasse den folgenden Text in etwa {word_count} Wörtern zusammen."
-    response = openai_client.ChatCompletion.create(
+    response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": prompt},
@@ -49,7 +47,6 @@ def summarize_articles(articles, openai_client, word_count):
     )
     summary = response.choices[0].message["content"].strip()
     return summary
-
 
 # Function to convert text to speech using ElevenLabs API
 def text_to_speech(text, elevenlabs_api_key):
@@ -83,7 +80,6 @@ def text_to_speech(text, elevenlabs_api_key):
 
     print(f"Audio file saved at: {audio_file_path}")
     return audio_file_path
-
 
 # Function to add background music to the voice audio
 def add_background_music(voice_path, music_path):
@@ -123,8 +119,8 @@ def add_background_music(voice_path, music_path):
     final_segment.export(final_audio_path, format="mp3")
     return final_audio_path
 
+app = Flask(__name__)
 
-# Main function
 @app.route('/', methods=['GET', 'POST'])
 def main():
     if request.method == 'POST':
@@ -144,7 +140,6 @@ def main():
         print(f"Berechne Artikel pro Kategorie: {articles_per_category} pro Kategorie")
 
         all_summaries = []
-        openai_client = openai.Client(api_key=OPENAI_API_KEY)
         for category in selected_categories:
             feed_url = CATEGORIES[category]
             feed = fetch_news_feed(feed_url)
@@ -153,7 +148,7 @@ def main():
                 print(f"Keine Artikel gefunden für die Kategorie '{category}'.")
                 continue
 
-            summary = summarize_articles(articles, openai_client, int(words_per_category))
+            summary = summarize_articles(articles, int(words_per_category))
             all_summaries.append(f"{category}: \n{summary}")
 
         final_summary = "\n\n".join(all_summaries)
@@ -163,18 +158,11 @@ def main():
         audio_file_path = text_to_speech(final_summary, ELEVENLABS_API_KEY)
         if audio_file_path:
             print(f"Audio wird abgespielt von: {audio_file_path}")
-            final_audio_path = add_background_music(audio_file_path, "background_music.mp3")
-            audio = AudioSegment.from_mp3(final_audio_path)
-            play(audio)
-            # Clean up the temporary audio files
-            os.remove(audio_file_path)
-            os.remove(final_audio_path)
-            print("Audio Datei abgespielt und entfernt.")
+            final_audio_path = add_background_music(audio_file_path, 'background_music.mp3')
+            return jsonify({"message": "Audio file created", "file_path": final_audio_path})
         else:
-            print("Fehler beim Generieren des Audios")
-
+            return jsonify({"message": "Fehler beim Generieren des Audios"}), 500
     return render_template('index.html', categories=CATEGORIES)
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
