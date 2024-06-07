@@ -3,8 +3,10 @@ import openai
 import requests
 import tempfile
 import os
+from flask import Flask, request, render_template, send_file
 from dotenv import load_dotenv
 
+app = Flask(__name__)
 load_dotenv()
 
 # Define categories and their associated RSS feeds
@@ -36,7 +38,7 @@ def get_latest_articles(feed, num_articles=5):
 def summarize_articles(articles, openai_client, word_count):
     text = " ".join([article.summary for article in articles])
     prompt = f"Fasse den folgenden Text in etwa {word_count} Wörtern zusammen."
-    response = openai_client.completions.create(
+    response = openai_client.chat_completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": prompt},
@@ -81,68 +83,49 @@ def text_to_speech(text, elevenlabs_api_key):
     return audio_file_path
 
 
-# Main function
-def main(openai_api_key, elevenlabs_api_key, background_music_path):
-    print("Verfügbare Kategorien:")
-    for i, category in enumerate(CATEGORIES.keys(), 1):
-        print(f"{i}. {category}")
+@app.route('/', methods=['GET', 'POST'])
+def main():
+    if request.method == 'POST':
+        selected_categories = request.form.getlist('categories')
+        total_time = int(request.form['total_time'])
+        detail_level = int(request.form['detail_level'])
 
-    selected_indices = input(
-        "Geben Sie die Nummern der Kategorien ein, an denen Sie interessiert sind (durch Kommas getrennt): ").split(",")
-    selected_categories = [list(CATEGORIES.keys())[int(index) - 1] for index in selected_indices]
+        time_per_category = total_time / len(selected_categories)
+        words_per_second = 2.5  # Approximation: 150 words per minute / 60 seconds
+        words_per_minute = words_per_second * 60
+        words_per_article = detail_level * 5 * words_per_second
+        words_per_category = time_per_category * words_per_minute
+        articles_per_category = max(1, int(words_per_category / words_per_article))
 
-    total_time = int(input("Wie lange soll die Ausgabe sein (in Minuten)? "))
-    detail_level = int(input("Wie detailliert sollen die Informationen sein (1-5)? "))
+        print(f"Berechne Artikel pro Kategorie: {articles_per_category} pro Kategorie")
 
-    time_per_category = total_time / len(selected_categories)
-    words_per_second = 2.5  # Approximation: 150 words per minute / 60 seconds
-    words_per_minute = words_per_second * 60
-    words_per_article = detail_level * 5 * words_per_second
-    words_per_category = time_per_category * words_per_minute
-    articles_per_category = max(1, int(words_per_category / words_per_article))
+        all_summaries = []
+        openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        for category in selected_categories:
+            feed_url = CATEGORIES[category]
+            feed = fetch_news_feed(feed_url)
+            articles = get_latest_articles(feed, articles_per_category)
+            if not articles:
+                print(f"Keine Artikel gefunden für die Kategorie '{category}'.")
+                continue
 
-    print(f"Berechne Artikel pro Kategorie: {articles_per_category} pro Kategorie")
+            summary = summarize_articles(articles, openai_client, int(words_per_category))
+            all_summaries.append(f"{category}: \n{summary}")
 
-    all_summaries = []
-    openai_client = openai.Client(api_key=openai_api_key)
-    for category in selected_categories:
-        feed_url = CATEGORIES[category]
-        feed = fetch_news_feed(feed_url)
-        articles = get_latest_articles(feed, articles_per_category)
-        if not articles:
-            print(f"Keine Artikel gefunden für die Kategorie '{category}'.")
-            continue
+        final_summary = "\n\n".join(all_summaries)
+        print("Zusammenfassung der Nachrichten:")
+        print(final_summary)
 
-        summary = summarize_articles(articles, openai_client, int(words_per_category))
-        all_summaries.append(f"{category}: \n{summary}")
+        audio_file_path = text_to_speech(final_summary, ELEVENLABS_API_KEY)
+        if audio_file_path:
+            print(f"Audio wird abgespielt von: {audio_file_path}")
+            return send_file(audio_file_path, as_attachment=True)
+        else:
+            print("Fehler beim Generieren des Audios")
+            return "Fehler beim Generieren des Audios", 500
 
-    final_summary = "\n\n".join(all_summaries)
-    print("Zusammenfassung der Nachrichten:")
-    print(final_summary)
-
-    audio_file_path = text_to_speech(final_summary, elevenlabs_api_key)
-    if audio_file_path:
-        print(f"Audio wird abgespielt von: {audio_file_path}")
-        audio = AudioSegment.from_mp3(audio_file_path)
-        audio.export("final_audio.mp3", format="mp3")
-        # Clean up the temporary audio files
-        os.remove(audio_file_path)
-        print("Audio Datei abgespielt und entfernt.")
-    else:
-        print("Fehler beim Generieren des Audios")
+    return render_template('index.html', categories=CATEGORIES)
 
 
 if __name__ == "__main__":
-    import os
-    from dotenv import load_dotenv
-
-    load_dotenv()  # take environment variables from .env.
-
-    # Get the environment variables for the API keys
-    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-    ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
-
-    # Path to the background music file
-    BACKGROUND_MUSIC_PATH = "C:/Users/Niki/Desktop/CustomNews/Neuigkeiten.mp3"
-
-    main(OPENAI_API_KEY, ELEVENLABS_API_KEY, BACKGROUND_MUSIC_PATH)
+    app.run(debug=True)

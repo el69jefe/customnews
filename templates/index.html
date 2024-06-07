@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -6,19 +6,19 @@
     <title>Custom News</title>
 </head>
 <body>
-    <h1>Custom News Generator</h1>
+    <h1>Custom News</h1>
     <form method="post">
-        <h2>Kategorien</h2>
-        {% for index, category in categories.items() %}
-            <label>
-                <input type="checkbox" name="categories" value="{{ loop.index }}">
-                {{ category }}
-            </label><br>
-        {% endfor %}
-        <h2>Gesamtlänge (in Minuten)</h2>
-        <input type="number" name="total_time" required><br>
-        <h2>Detailgrad (1-5)</h2>
-        <input type="number" name="detail_level" min="1" max="5" required><br>
+        <label for="categories">Kategorien auswählen:</label><br>
+        {% for category, url in categories.items() %}
+            <input type="checkbox" name="categories" value="{{ category }}">{{ category }}<br>
+        {% endfor %}<br>
+
+        <label for="total_time">Wie lange soll die Ausgabe sein (in Minuten)?</label>
+        <input type="number" name="total_time" required><br><br>
+
+        <label for="detail_level">Wie detailliert sollen die Informationen sein (1-5)?</label>
+        <input type="number" name="detail_level" min="1" max="5" required><br><br>
+
         <button type="submit">Nachricht generieren</button>
     </form>
 </body>
