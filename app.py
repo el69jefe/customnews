@@ -11,10 +11,6 @@ from flask import Flask, request, render_template
 app = Flask(__name__)
 load_dotenv()
 
-# Set the path to the ffmpeg binary
-ffmpeg_path = os.path.join(os.path.dirname(__file__), 'ffmpeg', 'bin')
-os.environ["PATH"] += os.pathsep + ffmpeg_path
-
 # Define categories and their associated RSS feeds
 CATEGORIES = {
     "Nachrichten": "https://taz.de/!p4608;rss/",
@@ -29,19 +25,22 @@ CATEGORIES = {
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 
+
 # Function to fetch news feed
 def fetch_news_feed(url):
     return feedparser.parse(url)
+
 
 # Function to get the latest articles from the feed
 def get_latest_articles(feed, num_articles=5):
     return feed.entries[:num_articles]
 
+
 # Function to summarize articles using OpenAI
 def summarize_articles(articles, openai_client, word_count):
     text = " ".join([article.summary for article in articles])
     prompt = f"Fasse den folgenden Text in etwa {word_count} Wörtern zusammen."
-    response = openai_client.chat_completions.create(
+    response = openai_client.ChatCompletion.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": prompt},
@@ -50,6 +49,7 @@ def summarize_articles(articles, openai_client, word_count):
     )
     summary = response.choices[0].message["content"].strip()
     return summary
+
 
 # Function to convert text to speech using ElevenLabs API
 def text_to_speech(text, elevenlabs_api_key):
@@ -83,6 +83,7 @@ def text_to_speech(text, elevenlabs_api_key):
 
     print(f"Audio file saved at: {audio_file_path}")
     return audio_file_path
+
 
 # Function to add background music to the voice audio
 def add_background_music(voice_path, music_path):
@@ -122,8 +123,10 @@ def add_background_music(voice_path, music_path):
     final_segment.export(final_audio_path, format="mp3")
     return final_audio_path
 
+
+# Main function
 @app.route('/', methods=['GET', 'POST'])
-def index():
+def main():
     if request.method == 'POST':
         selected_indices = request.form.getlist('categories')
         selected_categories = [list(CATEGORIES.keys())[int(index) - 1] for index in selected_indices]
@@ -141,7 +144,7 @@ def index():
         print(f"Berechne Artikel pro Kategorie: {articles_per_category} pro Kategorie")
 
         all_summaries = []
-        openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        openai_client = openai.Client(api_key=OPENAI_API_KEY)
         for category in selected_categories:
             feed_url = CATEGORIES[category]
             feed = fetch_news_feed(feed_url)
@@ -160,7 +163,7 @@ def index():
         audio_file_path = text_to_speech(final_summary, ELEVENLABS_API_KEY)
         if audio_file_path:
             print(f"Audio wird abgespielt von: {audio_file_path}")
-            final_audio_path = add_background_music(audio_file_path, 'background_music.mp3')
+            final_audio_path = add_background_music(audio_file_path, "background_music.mp3")
             audio = AudioSegment.from_mp3(final_audio_path)
             play(audio)
             # Clean up the temporary audio files
@@ -169,7 +172,9 @@ def index():
             print("Audio Datei abgespielt und entfernt.")
         else:
             print("Fehler beim Generieren des Audios")
+
     return render_template('index.html', categories=CATEGORIES)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     app.run(debug=True)
