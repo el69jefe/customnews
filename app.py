@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Set the path to the ffmpeg binary
+ffmpeg_path = os.path.join(os.path.dirname(__file__), 'ffmpeg', 'bin')
+os.environ["PATH"] += os.pathsep + ffmpeg_path
+
 # Define categories and their associated RSS feeds
 CATEGORIES = {
     "Nachrichten": "https://taz.de/!p4608;rss/",
@@ -145,7 +149,7 @@ def main(openai_api_key, elevenlabs_api_key, background_music_path):
     print(f"Berechne Artikel pro Kategorie: {articles_per_category} pro Kategorie")
 
     all_summaries = []
-    openai_client = openai.Client(api_key=openai_api_key)
+    openai_client = openai.OpenAI(api_key=openai_api_key)
     for category in selected_categories:
         feed_url = CATEGORIES[category]
         feed = fetch_news_feed(feed_url)
