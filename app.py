@@ -41,7 +41,7 @@ def get_latest_articles(feed, num_articles=5):
 def summarize_articles(articles, openai_client, word_count):
     text = " ".join([article.summary for article in articles])
     prompt = f"Fasse den folgenden Text in etwa {word_count} Wörtern zusammen."
-    response = openai_client.chat.completions.create(
+    response = openai_client.chat_completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": prompt},
