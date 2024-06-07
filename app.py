@@ -5,10 +5,9 @@ import tempfile
 import os
 from pydub import AudioSegment
 from pydub.playback import play
+from dotenv import load_dotenv
 
-# Set ffmpeg path
-ffmpeg_path = os.path.join(os.path.dirname(__file__), "ffmpeg", "bin", "ffmpeg")
-AudioSegment.converter = ffmpeg_path
+load_dotenv()
 
 # Define categories and their associated RSS feeds
 CATEGORIES = {
@@ -21,31 +20,38 @@ CATEGORIES = {
     "Wallstreet": "https://www.wallstreet-online.de/rss/nachrichten-alle.xml"
 }
 
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
+
+
 # Function to fetch news feed
 def fetch_news_feed(url):
     return feedparser.parse(url)
+
 
 # Function to get the latest articles from the feed
 def get_latest_articles(feed, num_articles=5):
     return feed.entries[:num_articles]
 
+
 # Function to summarize articles using OpenAI
 def summarize_articles(articles, openai_client, word_count):
     text = " ".join([article.summary for article in articles])
     prompt = f"Fasse den folgenden Text in etwa {word_count} Wörtern zusammen."
-    response = openai_client.chat_completions.create(
+    response = openai_client.chat.completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": text}
         ]
     )
-    summary = response.choices[0].message.content.strip()
+    summary = response.choices[0].message["content"].strip()
     return summary
+
 
 # Function to convert text to speech using ElevenLabs API
 def text_to_speech(text, elevenlabs_api_key):
-    voice_id = "iMHt6G42evkXunaDU065"  # Specify the provided voice ID
+    voice_id = "iMHt6G42evkXunaDU065"
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     headers = {
         "Accept": "audio/mpeg",
@@ -75,6 +81,7 @@ def text_to_speech(text, elevenlabs_api_key):
 
     print(f"Audio file saved at: {audio_file_path}")
     return audio_file_path
+
 
 # Function to add background music to the voice audio
 def add_background_music(voice_path, music_path):
@@ -114,13 +121,15 @@ def add_background_music(voice_path, music_path):
     final_segment.export(final_audio_path, format="mp3")
     return final_audio_path
 
+
 # Main function
 def main(openai_api_key, elevenlabs_api_key, background_music_path):
     print("Verfügbare Kategorien:")
     for i, category in enumerate(CATEGORIES.keys(), 1):
         print(f"{i}. {category}")
 
-    selected_indices = input("Geben Sie die Nummern der Kategorien ein, an denen Sie interessiert sind (durch Kommas getrennt): ").split(",")
+    selected_indices = input(
+        "Geben Sie die Nummern der Kategorien ein, an denen Sie interessiert sind (durch Kommas getrennt): ").split(",")
     selected_categories = [list(CATEGORIES.keys())[int(index) - 1] for index in selected_indices]
 
     total_time = int(input("Wie lange soll die Ausgabe sein (in Minuten)? "))
@@ -136,7 +145,7 @@ def main(openai_api_key, elevenlabs_api_key, background_music_path):
     print(f"Berechne Artikel pro Kategorie: {articles_per_category} pro Kategorie")
 
     all_summaries = []
-    openai_client = openai.OpenAI(api_key=openai_api_key)
+    openai_client = openai.Client(api_key=openai_api_key)
     for category in selected_categories:
         feed_url = CATEGORIES[category]
         feed = fetch_news_feed(feed_url)
@@ -165,10 +174,18 @@ def main(openai_api_key, elevenlabs_api_key, background_music_path):
     else:
         print("Fehler beim Generieren des Audios")
 
+
 if __name__ == "__main__":
-    # Replace these with your actual API keys
-    OPENAI_API_KEY = "sk-proj-flVKYx7XUb6XUIHQTBEmT3BlbkFJ07DtB5a6UErVQ1Cy7HvD"
-    ELEVENLABS_API_KEY = "a4ee49ad0eb016aa537fec9a73eeeef5"
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()  # take environment variables from .env.
+
+    # Get the environment variables for the API keys
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+    ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
+
     # Path to the background music file
     BACKGROUND_MUSIC_PATH = "C:/Users/Niki/Desktop/CustomNews/Neuigkeiten.mp3"
+
     main(OPENAI_API_KEY, ELEVENLABS_API_KEY, BACKGROUND_MUSIC_PATH)
