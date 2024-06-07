@@ -3,8 +3,6 @@ import openai
 import requests
 import tempfile
 import os
-from pydub import AudioSegment
-from flask import Flask, request, jsonify, render_template
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,22 +21,22 @@ CATEGORIES = {
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 
-# Initialize OpenAI
-openai.api_key = OPENAI_API_KEY
 
 # Function to fetch news feed
 def fetch_news_feed(url):
     return feedparser.parse(url)
 
+
 # Function to get the latest articles from the feed
 def get_latest_articles(feed, num_articles=5):
     return feed.entries[:num_articles]
 
+
 # Function to summarize articles using OpenAI
-def summarize_articles(articles, word_count):
+def summarize_articles(articles, openai_client, word_count):
     text = " ".join([article.summary for article in articles])
     prompt = f"Fasse den folgenden Text in etwa {word_count} Wörtern zusammen."
-    response = openai.ChatCompletion.create(
+    response = openai_client.completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": prompt},
@@ -47,6 +45,7 @@ def summarize_articles(articles, word_count):
     )
     summary = response.choices[0].message["content"].strip()
     return summary
+
 
 # Function to convert text to speech using ElevenLabs API
 def text_to_speech(text, elevenlabs_api_key):
@@ -81,88 +80,69 @@ def text_to_speech(text, elevenlabs_api_key):
     print(f"Audio file saved at: {audio_file_path}")
     return audio_file_path
 
-# Function to add background music to the voice audio
-def add_background_music(voice_path, music_path):
-    voice = AudioSegment.from_mp3(voice_path)
-    background = AudioSegment.from_mp3(music_path)
 
-    # Truncate background music to match the duration of the voice audio + 11 seconds (5 seconds + 6 seconds)
-    background_duration = len(voice) + 11000
-    if len(background) > background_duration:
-        background = background[:background_duration]
+# Main function
+def main(openai_api_key, elevenlabs_api_key, background_music_path):
+    print("Verfügbare Kategorien:")
+    for i, category in enumerate(CATEGORIES.keys(), 1):
+        print(f"{i}. {category}")
 
-    # Initial part of background music (6 seconds) at normal volume
-    initial_part = background[:6000]
+    selected_indices = input(
+        "Geben Sie die Nummern der Kategorien ein, an denen Sie interessiert sind (durch Kommas getrennt): ").split(",")
+    selected_categories = [list(CATEGORIES.keys())[int(index) - 1] for index in selected_indices]
 
-    # Lower the volume of the background music by 10 dB after 6 seconds
-    remaining_background = background[6000:]
-    background_with_lower_volume = remaining_background - 20
+    total_time = int(input("Wie lange soll die Ausgabe sein (in Minuten)? "))
+    detail_level = int(input("Wie detailliert sollen die Informationen sein (1-5)? "))
 
-    # Combine initial part and lower volume background
-    combined_background = initial_part + background_with_lower_volume
+    time_per_category = total_time / len(selected_categories)
+    words_per_second = 2.5  # Approximation: 150 words per minute / 60 seconds
+    words_per_minute = words_per_second * 60
+    words_per_article = detail_level * 5 * words_per_second
+    words_per_category = time_per_category * words_per_minute
+    articles_per_category = max(1, int(words_per_category / words_per_article))
 
-    # Overlay voice on background music starting at 6 seconds
-    combined = combined_background.overlay(voice, position=6000)
+    print(f"Berechne Artikel pro Kategorie: {articles_per_category} pro Kategorie")
 
-    # Increase the volume of the music after the voice finishes
-    voice_duration = len(voice)
-    combined = combined[:6000 + voice_duration] + (combined[6000 + voice_duration:] + 20)
+    all_summaries = []
+    openai_client = openai.Client(api_key=openai_api_key)
+    for category in selected_categories:
+        feed_url = CATEGORIES[category]
+        feed = fetch_news_feed(feed_url)
+        articles = get_latest_articles(feed, articles_per_category)
+        if not articles:
+            print(f"Keine Artikel gefunden für die Kategorie '{category}'.")
+            continue
 
-    # Add 5 more seconds of normal volume music after the voice
-    final_segment = combined[:6000 + voice_duration + 5000]
+        summary = summarize_articles(articles, openai_client, int(words_per_category))
+        all_summaries.append(f"{category}: \n{summary}")
 
-    # Fade out the background music for the last 2 seconds
-    final_segment = final_segment.fade_out(2000)
+    final_summary = "\n\n".join(all_summaries)
+    print("Zusammenfassung der Nachrichten:")
+    print(final_summary)
 
-    # Export the final audio to a temporary file
-    final_audio_path = tempfile.mktemp(suffix=".mp3")
-    final_segment.export(final_audio_path, format="mp3")
-    return final_audio_path
+    audio_file_path = text_to_speech(final_summary, elevenlabs_api_key)
+    if audio_file_path:
+        print(f"Audio wird abgespielt von: {audio_file_path}")
+        audio = AudioSegment.from_mp3(audio_file_path)
+        audio.export("final_audio.mp3", format="mp3")
+        # Clean up the temporary audio files
+        os.remove(audio_file_path)
+        print("Audio Datei abgespielt und entfernt.")
+    else:
+        print("Fehler beim Generieren des Audios")
 
-app = Flask(__name__)
 
-@app.route('/', methods=['GET', 'POST'])
-def main():
-    if request.method == 'POST':
-        selected_indices = request.form.getlist('categories')
-        selected_categories = [list(CATEGORIES.keys())[int(index) - 1] for index in selected_indices]
+if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
 
-        total_time = int(request.form['total_time'])
-        detail_level = int(request.form['detail_level'])
+    load_dotenv()  # take environment variables from .env.
 
-        time_per_category = total_time / len(selected_categories)
-        words_per_second = 2.5  # Approximation: 150 words per minute / 60 seconds
-        words_per_minute = words_per_second * 60
-        words_per_article = detail_level * 5 * words_per_second
-        words_per_category = time_per_category * words_per_minute
-        articles_per_category = max(1, int(words_per_category / words_per_article))
+    # Get the environment variables for the API keys
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+    ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 
-        print(f"Berechne Artikel pro Kategorie: {articles_per_category} pro Kategorie")
+    # Path to the background music file
+    BACKGROUND_MUSIC_PATH = "C:/Users/Niki/Desktop/CustomNews/Neuigkeiten.mp3"
 
-        all_summaries = []
-        for category in selected_categories:
-            feed_url = CATEGORIES[category]
-            feed = fetch_news_feed(feed_url)
-            articles = get_latest_articles(feed, articles_per_category)
-            if not articles:
-                print(f"Keine Artikel gefunden für die Kategorie '{category}'.")
-                continue
-
-            summary = summarize_articles(articles, int(words_per_category))
-            all_summaries.append(f"{category}: \n{summary}")
-
-        final_summary = "\n\n".join(all_summaries)
-        print("Zusammenfassung der Nachrichten:")
-        print(final_summary)
-
-        audio_file_path = text_to_speech(final_summary, ELEVENLABS_API_KEY)
-        if audio_file_path:
-            print(f"Audio wird abgespielt von: {audio_file_path}")
-            final_audio_path = add_background_music(audio_file_path, 'background_music.mp3')
-            return jsonify({"message": "Audio file created", "file_path": final_audio_path})
-        else:
-            return jsonify({"message": "Fehler beim Generieren des Audios"}), 500
-    return render_template('index.html', categories=CATEGORIES)
-
-if __name__ == '__main__':
-    app.run(debug=True)
+    main(OPENAI_API_KEY, ELEVENLABS_API_KEY, BACKGROUND_MUSIC_PATH)
