@@ -1,22 +1,25 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Custom News Generator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom News</title>
 </head>
 <body>
     <h1>Custom News Generator</h1>
-    <form action="/generate_news" method="post">
-        <label for="categories">Kategorien:</label><br>
-        {% for category in categories %}
-            <input type="checkbox" name="categories" value="{{ category }}">{{ category }}<br>
+    <form method="post">
+        <h2>Kategorien</h2>
+        {% for index, category in categories.items() %}
+            <label>
+                <input type="checkbox" name="categories" value="{{ loop.index }}">
+                {{ category }}
+            </label><br>
         {% endfor %}
-        <br>
-        <label for="total_time">Gesamtdauer (in Minuten):</label><br>
-        <input type="number" name="total_time" required><br><br>
-        <label for="detail_level">Detailgrad (1-5):</label><br>
-        <input type="number" name="detail_level" min="1" max="5" required><br><br>
-        <input type="submit" value="Nachrichten generieren">
+        <h2>Gesamtlänge (in Minuten)</h2>
+        <input type="number" name="total_time" required><br>
+        <h2>Detailgrad (1-5)</h2>
+        <input type="number" name="detail_level" min="1" max="5" required><br>
+        <button type="submit">Nachricht generieren</button>
     </form>
 </body>
 </html>
